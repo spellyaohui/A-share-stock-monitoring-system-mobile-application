@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+*.local
+
+# 构建产物
+stock-monitor-pc/dist/
+stock-monitor-mobile/dist/
+stock-monitor-mobile/unpackage/
+
+# 日志
+*.log
+logs/
+
+# 测试
+.coverage
+htmlcov/
+.pytest_cache/
+
+# uni-app
+stock-monitor-mobile/.hbuilderx/
+
+# 数据库
+*.sql.bak
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
+
+# Kiro
+.kiro/
+
+# 其他
+*.bak
+*.backup
+Thumbs.db

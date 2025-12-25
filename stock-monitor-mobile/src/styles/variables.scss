@@ -1,0 +1,107 @@
+// ============================================
+// 股票监测系统移动端 - 全局样式变量
+// ============================================
+
+// 主题色
+$primary-color: #667eea;
+$primary-light: #818cf8;
+$primary-dark: #5b21b6;
+$primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+$primary-gradient-light: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+
+// 涨跌色（A股：红涨绿跌）
+$up-color: #ef4444;
+$up-light: #fca5a5;
+$up-bg: rgba(239, 68, 68, 0.1);
+$down-color: #22c55e;
+$down-light: #86efac;
+$down-bg: rgba(34, 197, 94, 0.1);
+
+// 功能色
+$success-color: #22c55e;
+$warning-color: #f59e0b;
+$danger-color: #ef4444;
+$info-color: #3b82f6;
+
+// 渐变色
+$gradient-success: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+$gradient-warning: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+$gradient-danger: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+$gradient-info: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+
+// 中性色
+$text-primary: #1e293b;
+$text-secondary: #64748b;
+$text-muted: #94a3b8;
+$text-light: #cbd5e1;
+
+// 背景色
+$bg-primary: #f8fafc;
+$bg-secondary: #f1f5f9;
+$bg-white: #ffffff;
+$bg-dark: #1e293b;
+
+// 边框色
+$border-color: #e2e8f0;
+$border-light: #f1f5f9;
+
+// 圆角
+$radius-xs: 8rpx;
+$radius-sm: 12rpx;
+$radius-md: 16rpx;
+$radius-lg: 24rpx;
+$radius-xl: 32rpx;
+$radius-2xl: 48rpx;
+$radius-full: 9999rpx;
+
+// 阴影
+$shadow-xs: 0 2rpx 4rpx rgba(0, 0, 0, 0.02);
+$shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+$shadow-md: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
+$shadow-lg: 0 8rpx 24rpx rgba(0, 0, 0, 0.12);
+$shadow-xl: 0 16rpx 48rpx rgba(0, 0, 0, 0.16);
+
+// 间距
+$spacing-xs: 8rpx;
+$spacing-sm: 16rpx;
+$spacing-md: 24rpx;
+$spacing-lg: 32rpx;
+$spacing-xl: 48rpx;
+$spacing-2xl: 64rpx;
+
+// 字体大小
+$font-xs: 22rpx;
+$font-sm: 24rpx;
+$font-base: 28rpx;
+$font-md: 32rpx;
+$font-lg: 36rpx;
+$font-xl: 44rpx;
+$font-2xl: 56rpx;
+$font-3xl: 72rpx;
+
+// 字重
+$font-normal: 400;
+$font-medium: 500;
+$font-semibold: 600;
+$font-bold: 700;
+
+// 行高
+$line-height-tight: 1.2;
+$line-height-normal: 1.5;
+$line-height-relaxed: 1.75;
+
+// 过渡动画
+$transition-fast: 0.15s ease;
+$transition-normal: 0.25s ease;
+$transition-slow: 0.35s ease;
+
+// 安全区域
+$safe-area-top: env(safe-area-inset-top);
+$safe-area-bottom: env(safe-area-inset-bottom);
+
+// TabBar 高度
+$tabbar-height: 100rpx;
+
+// 导航栏高度
+$navbar-height: 88rpx;
+$statusbar-height: 44rpx;
