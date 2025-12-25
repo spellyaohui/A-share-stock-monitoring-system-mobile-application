@@ -12,7 +12,7 @@ function getBaseUrl(): string {
   // #ifdef APP-PLUS
   // APP 环境使用完整地址
   // 开发时使用本机 IP，生产环境替换为实际服务器地址
-  return 'http://192.168.1.141:8000/api'  // 你的电脑局域网 IP
+  return 'http://unraid.wjtjyy.top:4002/api'  // 你的电脑局域网 IP
   // #endif
   
   // #ifdef MP-WEIXIN
