@@ -67,3 +67,61 @@ export interface LoginResponse {
   access_token: string
   token_type: string
 }
+
+// 五档盘口数据
+export interface BidAskItem {
+  price: number
+  volume: number
+}
+
+export interface BidAskData {
+  code: string
+  timestamp: string
+  bids: BidAskItem[]  // 买盘（买1-买5）
+  asks: BidAskItem[]  // 卖盘（卖1-卖5）
+}
+
+// 分钟K线数据
+export interface MinuteKlineItem {
+  time: string
+  open: number
+  close: number
+  high: number
+  low: number
+  volume: number
+  amount: number
+  latest_price?: number
+}
+
+export interface MinuteKlineResponse {
+  klines: MinuteKlineItem[]
+  period: string
+  total: number
+}
+
+// 热门股票
+export interface HotStockItem {
+  rank: number
+  code: string
+  name: string
+  price: number
+  change_percent: number
+  rank_change: number  // 排名变化
+}
+
+export interface HotStockResponse {
+  list: HotStockItem[]
+  total: number
+}
+
+// 热门关键词
+export interface HotKeywordItem {
+  keyword: string
+  heat: number
+  related_stocks: string
+}
+
+export interface HotKeywordResponse {
+  list: HotKeywordItem[]
+  total: number
+}

@@ -1,1 +1,1 @@
-from app.api import auth, stocks, monitors, charts, notifications
+from app.api import auth, stocks, monitors, charts, notifications, users

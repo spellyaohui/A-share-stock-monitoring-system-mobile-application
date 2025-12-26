@@ -44,15 +44,16 @@ class Settings(BaseSettings):
     MONITOR_CHECK_INTERVAL: int = 60  # 监测检查间隔（秒）
 
     # 缓存配置
-    CACHE_TTL_REALTIME: int = 30  # 实时数据缓存时间（秒）
-    CACHE_TTL_KLINE: int = 300  # K线数据缓存时间（秒）
+    CACHE_TTL_REALTIME: int = 60  # 实时数据缓存时间（秒），调长到60秒
+    CACHE_TTL_KLINE: int = 600  # K线数据缓存时间（秒），调长到10分钟
     CACHE_TTL_FINANCIAL: int = 3600  # 财务数据缓存时间（秒）
     
     # 市场数据缓存配置（避免频繁调用 AkShare API）
-    CACHE_TTL_MARKET_TRADING: int = 300  # 交易时间内市场数据缓存（秒），默认5分钟
-    CACHE_TTL_MARKET_NON_TRADING: int = 7200  # 非交易时间市场数据缓存（秒），默认2小时
-    CACHE_TTL_SECTORS: int = 1800  # 板块数据缓存（秒），默认30分钟
-    CACHE_TTL_LHB: int = 3600  # 龙虎榜数据缓存（秒），默认1小时
+    # 由于监测个股已有专门的高效 API，市场数据缓存时间可以调长
+    CACHE_TTL_MARKET_TRADING: int = 600  # 交易时间内市场数据缓存（秒），调长到10分钟
+    CACHE_TTL_MARKET_NON_TRADING: int = 14400  # 非交易时间市场数据缓存（秒），调长到4小时
+    CACHE_TTL_SECTORS: int = 3600  # 板块数据缓存（秒），调长到1小时
+    CACHE_TTL_LHB: int = 7200  # 龙虎榜数据缓存（秒），调长到2小时
 
     class Config:
         env_file = ".env"

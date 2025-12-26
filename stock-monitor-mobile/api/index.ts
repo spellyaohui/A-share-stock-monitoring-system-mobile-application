@@ -100,6 +100,37 @@ export const stockApi = {
    */
   getIndicators(id: number, indicator: string = 'ma'): Promise<any> {
     return http.get<any>(`/stocks/${id}/indicators`, { indicator })
+  },
+  
+  /**
+   * 获取五档盘口数据
+   */
+  getBidAsk(id: number): Promise<any> {
+    return http.get<any>(`/stocks/${id}/bid-ask`)
+  },
+  
+  /**
+   * 获取分钟 K 线数据
+   * @param id 股票 ID
+   * @param period 分钟周期：1 | 5 | 15 | 30 | 60
+   * @param limit 数据条数
+   */
+  getMinuteKline(id: number, period: string = '5', limit: number = 100): Promise<any> {
+    return http.get<any>(`/stocks/${id}/kline-minute`, { period, limit })
+  },
+  
+  /**
+   * 获取热门股票排名
+   */
+  getHotRank(limit: number = 50): Promise<any> {
+    return http.get<any>('/stocks/market/hot-rank', { limit })
+  },
+  
+  /**
+   * 获取热门关键词
+   */
+  getHotKeywords(): Promise<any> {
+    return http.get<any>('/stocks/market/hot-keywords')
   }
 }
 

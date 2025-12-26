@@ -12,7 +12,7 @@
       <!-- 刷新状态提示 -->
       <view class="refresh-status" v-if="monitorStore.isTrading">
         <text class="status-dot"></text>
-        <text class="status-text">交易中 · 每{{ monitorStore.cacheTtl }}秒刷新</text>
+        <text class="status-text">交易中 · 每{{ Math.round(monitorStore.currentInterval / 1000) }}秒刷新</text>
       </view>
     </view>
     
@@ -31,10 +31,10 @@
       <!-- 监测列表 -->
       <scroll-view 
         class="monitor-list" 
-        scroll-y 
-        :refresher-enabled="true"
-        :refresher-triggered="refreshing"
-        @refresherrefresh="onPullDownRefresh"
+        scroll-y
+        :enhanced="true"
+        :show-scrollbar="false"
+        :bounces="true"
       >
         <view class="monitor-items">
           <StockCard
@@ -71,6 +71,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onShow, onHide } from '@dcloudio/uni-app'
 import { useMonitorStore } from '../../store/monitor'
 import StatCard from '../../components/StatCard.vue'
 import StockCard from '../../components/StockCard.vue'
@@ -82,16 +83,14 @@ const monitorStore = useMonitorStore()
 
 // 状态
 const loading = ref(true)  // 首次加载状态
-const refreshing = ref(false)
 const isFirstLoad = ref(true)
 
 // 计算属性
 const monitors = computed(() => monitorStore.monitors)
 
-// 生命周期
+// 生命周期 - 页面首次加载
 onMounted(async () => {
   await loadData()
-  monitorStore.startAutoRefresh()
   
   // 检查 App 更新（仅在 APP 平台执行）
   // #ifdef APP-PLUS
@@ -101,6 +100,18 @@ onMounted(async () => {
     console.log('检查更新:', err.message || '当前已是最新版本')
   })
   // #endif
+})
+
+// 页面显示时刷新数据并启动自动刷新
+onShow(async () => {
+  // 每次页面显示时刷新数据
+  await loadData()
+  monitorStore.startAutoRefresh()
+})
+
+// 页面隐藏时停止自动刷新
+onHide(() => {
+  monitorStore.stopAutoRefresh()
 })
 
 onUnmounted(() => {
@@ -123,23 +134,18 @@ async function loadData() {
   }
 }
 
-// 下拉刷新
-async function onPullDownRefresh() {
-  refreshing.value = true
+// 手动刷新
+async function handleRefresh() {
+  if (loading.value) return
+  loading.value = true
   try {
     await monitorStore.loadMonitors()
     uni.showToast({ title: '刷新成功', icon: 'success', duration: 1000 })
   } catch (error) {
     uni.showToast({ title: '刷新失败', icon: 'none' })
   } finally {
-    refreshing.value = false
+    loading.value = false
   }
-}
-
-// 手动刷新
-async function handleRefresh() {
-  if (loading.value) return
-  await loadData()
 }
 
 // 切换监测状态
@@ -176,8 +182,12 @@ function handleDelete(id: number) {
 }
 
 // 跳转到详情
-function goToDetail(stockId: number) {
-  uni.navigateTo({ url: `/pages/stock-detail/index?id=${stockId}` })
+function goToDetail(data: { stockId: number, code?: string, name?: string }) {
+  if (data.code) {
+    uni.navigateTo({ 
+      url: `/pages/stock-detail/index?code=${data.code}&name=${encodeURIComponent(data.name || '')}` 
+    })
+  }
 }
 
 // 跳转到搜索
@@ -280,7 +290,7 @@ function goToSearch() {
 // 监测列表
 .monitor-list {
   flex: 1;
-  height: calc(100vh - 400rpx - 100rpx);
+  height: calc(100vh - 350rpx - 100rpx);
 }
 
 .monitor-items {

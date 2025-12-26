@@ -48,10 +48,10 @@ def start_scheduler():
         replace_existing=True
     )
     
-    # 盘中每 5 分钟刷新一次（9:30-11:30, 13:00-15:00）
+    # 盘中每 10 分钟刷新一次（由于监测个股有专门的高效 API，市场数据刷新间隔调长）
     scheduler.add_job(
         refresh_market_cache,
-        IntervalTrigger(minutes=5),
+        IntervalTrigger(minutes=10),
         id='refresh_market_interval',
         replace_existing=True
     )
@@ -64,10 +64,10 @@ def start_scheduler():
         replace_existing=True
     )
     
-    # 2. 监测条件检查任务（每分钟）
+    # 2. 监测条件检查任务（每2分钟，由于监测个股有专门的高效 API，间隔可以调长）
     scheduler.add_job(
         check_monitor_conditions,
-        IntervalTrigger(minutes=1),
+        IntervalTrigger(minutes=2),
         id='check_monitors',
         replace_existing=True
     )

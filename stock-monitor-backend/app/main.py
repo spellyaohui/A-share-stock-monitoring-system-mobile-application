@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.api import auth, stocks, monitors, charts, notifications, enhanced_stocks
+from app.api import auth, stocks, monitors, charts, notifications, enhanced_stocks, users
 from app.api.realtime_monitor import router as realtime_router
 from app.websocket.handler import router as ws_router
 from app.database import engine
@@ -39,6 +39,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
+app.include_router(users.router, prefix="/api/users", tags=["用户管理"])
 app.include_router(stocks.router, prefix="/api/stocks", tags=["股票"])
 app.include_router(monitors.router, prefix="/api/monitors", tags=["监测"])
 app.include_router(charts.router, prefix="/api/charts", tags=["图表"])

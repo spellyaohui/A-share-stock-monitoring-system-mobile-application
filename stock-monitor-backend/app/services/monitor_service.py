@@ -21,11 +21,45 @@ async def get_user_monitors(db: AsyncSession, user_id: int) -> List[Monitor]:
     return result.scalars().all()
 
 async def get_user_monitors_with_realtime(db: AsyncSession, user_id: int) -> List[dict]:
+    """
+    获取用户监测列表及实时行情（并发优化版本）
+    
+    优化策略：
+    1. 并发获取所有股票的实时行情，而非串行
+    2. 使用 asyncio.gather 并发执行，大幅提升响应速度
+    3. 限制并发数避免过载
+    """
+    import asyncio
+    
     monitors = await get_user_monitors(db, user_id)
+    
+    if not monitors:
+        return []
+    
+    # 收集所有需要获取行情的股票代码
+    stock_codes = [m.stock.code for m in monitors if m.stock]
+    
+    # 并发获取所有股票的实时行情（限制并发数为10）
+    semaphore = asyncio.Semaphore(10)
+    
+    async def fetch_quote(code: str):
+        async with semaphore:
+            try:
+                return code, await data_fetcher.get_realtime_quote_for_monitor(code)
+            except Exception as e:
+                logger.warning(f"获取行情失败: {code}, 错误: {e}")
+                return code, {}
+    
+    # 并发执行所有请求
+    quote_results = await asyncio.gather(*[fetch_quote(code) for code in stock_codes])
+    
+    # 构建代码到行情的映射
+    quotes_map = {code: quote for code, quote in quote_results}
+    
+    # 组装结果
     result = []
     for monitor in monitors:
-        # 使用新的数据获取服务
-        realtime = await data_fetcher.get_realtime_quote(monitor.stock.code) if monitor.stock else {}
+        realtime = quotes_map.get(monitor.stock.code, {}) if monitor.stock else {}
         monitor_dict = {
             "id": monitor.id,
             "stock_id": monitor.stock_id,
@@ -40,8 +74,21 @@ async def get_user_monitors_with_realtime(db: AsyncSession, user_id: int) -> Lis
                 "code": monitor.stock.code,
                 "name": monitor.stock.name
             } if monitor.stock else None,
+            # 实时行情数据
             "current_price": realtime.get("price"),
-            "change": realtime.get("change")
+            "price": realtime.get("price"),
+            "change": realtime.get("change"),
+            "change_percent": realtime.get("change_percent"),
+            "open": realtime.get("open"),
+            "high": realtime.get("high"),
+            "low": realtime.get("low"),
+            "pre_close": realtime.get("pre_close"),
+            "volume": realtime.get("volume"),
+            "amount": realtime.get("amount"),
+            "turnover_rate": realtime.get("turnover_rate"),
+            "volume_ratio": realtime.get("volume_ratio"),
+            "limit_up": realtime.get("limit_up"),
+            "limit_down": realtime.get("limit_down"),
         }
         result.append(monitor_dict)
     return result
@@ -219,17 +266,44 @@ async def send_notification(db: AsyncSession, user_id: int, content: str):
         print(f"发送通知失败: {e}")
 
 async def check_and_notify(db: AsyncSession) -> None:
+    """
+    检查所有活跃监测并发送通知（并发优化版本）
+    """
+    import asyncio
+    
     result = await db.execute(
         select(Monitor)
         .options(selectinload(Monitor.stock))
         .where(Monitor.is_active == True)
     )
     monitors = result.scalars().all()
-
+    
+    if not monitors:
+        return
+    
+    # 收集所有股票代码
+    stock_codes = list(set(m.stock.code for m in monitors if m.stock))
+    
+    # 并发获取所有行情
+    semaphore = asyncio.Semaphore(10)
+    
+    async def fetch_quote(code: str):
+        async with semaphore:
+            try:
+                return code, await data_fetcher.get_realtime_quote_for_monitor(code)
+            except Exception as e:
+                logger.warning(f"获取行情失败: {code}, 错误: {e}")
+                return code, {}
+    
+    quote_results = await asyncio.gather(*[fetch_quote(code) for code in stock_codes])
+    quotes_map = {code: quote for code, quote in quote_results}
+    
+    # 检查每个监测条件
     for monitor in monitors:
-        # 使用新的数据获取服务
-        realtime = await data_fetcher.get_realtime_quote(monitor.stock.code) if monitor.stock else {}
-
+        if not monitor.stock:
+            continue
+            
+        realtime = quotes_map.get(monitor.stock.code, {})
         if not realtime or 'price' not in realtime:
             continue
 

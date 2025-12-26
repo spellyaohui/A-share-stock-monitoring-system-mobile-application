@@ -30,6 +30,7 @@
           </div>
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item command="users"><el-icon><User /></el-icon>用户管理</el-dropdown-item>
               <el-dropdown-item command="settings"><el-icon><Setting /></el-icon>设置</el-dropdown-item>
               <el-dropdown-item command="logout" divided><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
             </el-dropdown-menu>
@@ -90,7 +91,7 @@
             
             <div class="monitor-price" :class="getChangeClass(monitor)">
               <span class="current-price">{{ formatPrice(monitor.current_price) }}</span>
-              <span class="change-percent">{{ formatChange(monitor.change) }}</span>
+              <span class="change-percent">{{ formatChange(monitor.change_percent) }}</span>
             </div>
             
             <div class="monitor-conditions">
@@ -188,10 +189,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Delete, Monitor, TrendCharts, ArrowDown, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { Plus, Refresh, Delete, Monitor, TrendCharts, ArrowDown, Setting, SwitchButton, User } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import { api } from '@/api'
 import type { MonitorConfig } from '@/types'
@@ -201,10 +202,12 @@ const userStore = useUserStore()
 
 const monitors = ref<MonitorConfig[]>([])
 const loading = ref(false)
+const refreshing = ref(false)  // 区分首次加载和刷新
 const showAddDialog = ref(false)
 const adding = ref(false)
 const searchKeyword = ref('')
 const selectedStock = ref<any>(null)
+let refreshTimer: number | null = null
 
 const monitorForm = ref({
   stock_id: 0,
@@ -215,13 +218,32 @@ const monitorForm = ref({
 })
 
 const activeCount = computed(() => monitors.value.filter(m => m.is_active !== false).length)
-const upCount = computed(() => monitors.value.filter(m => (m.change || 0) > 0).length)
+const upCount = computed(() => monitors.value.filter(m => (m.change_percent || 0) > 0).length)
 const todayTriggered = ref(0)
 
 onMounted(() => {
   loadMonitors()
-  setInterval(loadMonitors, 30000)
+  // 使用 setTimeout 递归代替 setInterval，避免请求堆积
+  startAutoRefresh()
 })
+
+onUnmounted(() => {
+  // 清理定时器，避免内存泄漏
+  if (refreshTimer) {
+    clearTimeout(refreshTimer)
+    refreshTimer = null
+  }
+})
+
+function startAutoRefresh() {
+  refreshTimer = window.setTimeout(async () => {
+    // 只有在页面可见时才刷新
+    if (document.visibilityState === 'visible') {
+      await refreshMonitors()
+    }
+    startAutoRefresh()
+  }, 15000)  // 缩短到 15 秒，因为后端已优化
+}
 
 async function loadMonitors() {
   loading.value = true
@@ -232,6 +254,20 @@ async function loadMonitors() {
     console.error('加载监测列表失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+// 静默刷新，不显示 loading 状态
+async function refreshMonitors() {
+  if (refreshing.value) return  // 防止重复请求
+  refreshing.value = true
+  try {
+    const res = await api.monitors.getList()
+    monitors.value = res
+  } catch (error) {
+    console.error('刷新监测列表失败:', error)
+  } finally {
+    refreshing.value = false
   }
 }
 
@@ -310,7 +346,7 @@ function formatChange(change?: number): string {
 }
 
 function getChangeClass(row: MonitorConfig): string {
-  const change = row.change || 0
+  const change = row.change_percent || 0
   return change >= 0 ? 'text-up' : 'text-down'
 }
 
@@ -319,7 +355,9 @@ function goToDetail(row: MonitorConfig) {
 }
 
 function handleCommand(command: string) {
-  if (command === 'settings') {
+  if (command === 'users') {
+    router.push('/users')
+  } else if (command === 'settings') {
     router.push('/settings')
   } else if (command === 'logout') {
     userStore.logout()

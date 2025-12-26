@@ -7,8 +7,8 @@ import { ref, computed } from 'vue'
 import { monitorApi, realtimeApi } from '../api'
 import type { MonitorConfig, CreateMonitorRequest, UpdateMonitorRequest } from '../types'
 
-// 交易时间内使用短间隔（10秒），非交易时间使用长间隔（60秒）
-const REFRESH_INTERVAL_TRADING = 10000  // 10秒
+// 交易时间内使用短间隔（15秒），非交易时间使用长间隔（60秒）
+const REFRESH_INTERVAL_TRADING = 15000  // 15秒（考虑后端缓存10秒+网络延迟）
 const REFRESH_INTERVAL_NON_TRADING = 60000  // 60秒
 
 export const useMonitorStore = defineStore('monitor', () => {
@@ -18,6 +18,7 @@ export const useMonitorStore = defineStore('monitor', () => {
   const lastUpdated = ref<Date | null>(null)
   const isTrading = ref(false)  // 是否交易时间
   const cacheTtl = ref(10)  // 后端缓存时间
+  const currentInterval = ref(REFRESH_INTERVAL_NON_TRADING)  // 当前刷新间隔
   
   // 定时器
   let refreshTimer: number | null = null
@@ -39,9 +40,18 @@ export const useMonitorStore = defineStore('monitor', () => {
       // 使用新的实时监测 API
       const result = await realtimeApi.getRealtimeMonitors()
       monitors.value = result.monitors || []
+      
+      // 检查交易状态是否变化，动态调整刷新间隔
+      const wasTrading = isTrading.value
       isTrading.value = result.is_trading || false
       cacheTtl.value = result.cache_ttl || 10
       lastUpdated.value = new Date()
+      
+      // 如果交易状态变化，重新设置定时器
+      if (wasTrading !== isTrading.value && refreshTimer) {
+        console.log(`交易状态变化: ${wasTrading} -> ${isTrading.value}，调整刷新间隔`)
+        restartAutoRefresh()
+      }
     } catch (error) {
       console.error('加载监测列表失败:', error)
       // 如果实时 API 失败，回退到普通 API
@@ -134,22 +144,37 @@ export const useMonitorStore = defineStore('monitor', () => {
   
   /**
    * 开始自动刷新
-   * 交易时间内每 10 秒刷新，非交易时间每 60 秒刷新
+   * 交易时间内每 15 秒刷新，非交易时间每 60 秒刷新
    */
   function startAutoRefresh(): void {
     stopAutoRefresh()
     isStoreActive = true
     
     // 根据是否交易时间选择刷新间隔
-    const interval = isTrading.value ? REFRESH_INTERVAL_TRADING : REFRESH_INTERVAL_NON_TRADING
+    currentInterval.value = isTrading.value ? REFRESH_INTERVAL_TRADING : REFRESH_INTERVAL_NON_TRADING
     
-    refreshTimer = setInterval(() => {
-      if (isStoreActive) {
-        loadMonitors().catch(console.error)
+    refreshTimer = setInterval(async () => {
+      // 双重检查：确保 store 仍然活跃
+      if (!isStoreActive || !refreshTimer) {
+        return
       }
-    }, interval) as unknown as number
+      try {
+        await loadMonitors()
+      } catch (error) {
+        console.error('自动刷新失败:', error)
+      }
+    }, currentInterval.value) as unknown as number
     
-    console.log(`监测自动刷新已启动，间隔: ${interval / 1000}秒`)
+    console.log(`监测自动刷新已启动，交易时间: ${isTrading.value}，间隔: ${currentInterval.value / 1000}秒`)
+  }
+  
+  /**
+   * 重启自动刷新（用于交易状态变化时）
+   */
+  function restartAutoRefresh(): void {
+    if (refreshTimer) {
+      startAutoRefresh()
+    }
   }
   
   /**
@@ -161,17 +186,14 @@ export const useMonitorStore = defineStore('monitor', () => {
       clearInterval(refreshTimer)
       refreshTimer = null
     }
+    console.log('监测自动刷新已停止')
   }
   
   /**
-   * 根据交易状态调整刷新间隔
+   * 根据交易状态调整刷新间隔（已废弃，使用 restartAutoRefresh）
    */
   function adjustRefreshInterval(): void {
-    if (refreshTimer) {
-      stopAutoRefresh()
-      isStoreActive = true
-      startAutoRefresh()
-    }
+    restartAutoRefresh()
   }
   
   /**
@@ -190,6 +212,7 @@ export const useMonitorStore = defineStore('monitor', () => {
     lastUpdated,
     isTrading,
     cacheTtl,
+    currentInterval,
     
     // 计算属性
     monitorCount,

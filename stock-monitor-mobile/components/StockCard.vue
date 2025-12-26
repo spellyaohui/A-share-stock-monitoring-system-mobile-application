@@ -1,48 +1,48 @@
 <template>
   <view class="stock-card" :class="{ 'has-alert': monitor.has_alert }" @click="handleClick">
-    <!-- 预警标识 -->
-    <view class="alert-badge" v-if="monitor.has_alert">
-      <text>🔔</text>
-    </view>
-    
-    <!-- 头部：股票信息和开关 -->
-    <view class="card-header">
+    <!-- 主要内容区：单行紧凑布局 -->
+    <view class="card-main">
+      <!-- 左侧：股票信息 -->
       <view class="stock-info">
-        <text class="stock-name">{{ monitor.stock_name || monitor.stock?.name || '--' }}</text>
+        <view class="stock-name-row">
+          <text class="stock-name">{{ monitor.stock_name || monitor.stock?.name || '--' }}</text>
+          <text class="alert-icon" v-if="monitor.has_alert">🔔</text>
+        </view>
         <text class="stock-code">{{ monitor.stock_code || monitor.stock?.code || '--' }}</text>
       </view>
-      <switch 
-        class="stock-switch"
-        :checked="monitor.is_active !== false" 
-        @change="handleToggle"
-        color="#667eea"
-      />
+      
+      <!-- 中间：价格和涨跌 -->
+      <view class="price-section">
+        <text class="current-price" :class="priceClass">
+          {{ formatPrice(monitor.price || monitor.current_price) }}
+        </text>
+        <text class="change-percent" :class="priceClass">
+          {{ formatChange(monitor.change_percent || monitor.change) }}
+        </text>
+      </view>
+      
+      <!-- 右侧：开关和删除 -->
+      <view class="actions-section">
+        <switch 
+          class="stock-switch"
+          :checked="monitor.is_active !== false" 
+          @change="handleToggle"
+          color="#667eea"
+        />
+        <view class="delete-btn" @click.stop="handleDelete" v-if="showActions">
+          <text>✕</text>
+        </view>
+      </view>
     </view>
     
-    <!-- 价格区域 -->
-    <view class="price-section">
-      <text class="current-price" :class="priceClass">
-        {{ formatPrice(monitor.price || monitor.current_price) }}
+    <!-- 预警信息（仅在有预警时显示，单行） -->
+    <view class="alert-row" v-if="monitor.alerts && monitor.alerts.length > 0">
+      <text class="alert-text" :class="'alert-' + monitor.alerts[0].level">
+        {{ getAlertIcon(monitor.alerts[0].level) }} {{ monitor.alerts[0].message }}
       </text>
-      <view class="change-info" :class="priceClass">
-        <text class="change-percent">{{ formatChange(monitor.change_percent || monitor.change) }}</text>
-      </view>
     </view>
     
-    <!-- 预警信息 -->
-    <view class="alerts-section" v-if="monitor.alerts && monitor.alerts.length > 0">
-      <view 
-        class="alert-item" 
-        v-for="(alert, index) in monitor.alerts" 
-        :key="index"
-        :class="'alert-' + alert.level"
-      >
-        <text class="alert-icon">{{ getAlertIcon(alert.level) }}</text>
-        <text class="alert-message">{{ alert.message }}</text>
-      </view>
-    </view>
-    
-    <!-- 监测条件标签 -->
+    <!-- 监测条件标签（单行横向排列） -->
     <view class="conditions" v-if="hasConditions">
       <view class="condition-tag tag-warning" v-if="monitor.price_upper">
         <text>≤{{ monitor.price_upper }}</text>
@@ -55,13 +55,6 @@
       </view>
       <view class="condition-tag tag-info" v-if="monitor.change_lower">
         <text>跌{{ monitor.change_lower }}%</text>
-      </view>
-    </view>
-    
-    <!-- 底部操作区 -->
-    <view class="card-footer" v-if="showActions">
-      <view class="action-btn delete-btn" @click.stop="handleDelete">
-        <text>删除</text>
       </view>
     </view>
   </view>
@@ -77,7 +70,7 @@ interface Props {
 }
 
 interface Emits {
-  (e: 'click', stockId: number): void
+  (e: 'click', data: { stockId: number, code?: string, name?: string }): void
   (e: 'toggle', id: number, active: boolean): void
   (e: 'delete', id: number): void
 }
@@ -130,7 +123,11 @@ function getAlertIcon(level: string): string {
 // 事件处理
 function handleClick() {
   if (props.monitor.stock_id) {
-    emit('click', props.monitor.stock_id)
+    emit('click', {
+      stockId: props.monitor.stock_id,
+      code: props.monitor.stock?.code || props.monitor.stock_code,
+      name: props.monitor.stock?.name || props.monitor.stock_name
+    })
   }
 }
 
@@ -153,12 +150,11 @@ function handleDelete() {
 
 .stock-card {
   background: var(--bg-card);
-  border-radius: 24rpx;
-  padding: 32rpx;
-  margin-bottom: 24rpx;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
   box-shadow: var(--shadow-sm);
-  transition: all 0.25s ease;
-  position: relative;
+  transition: all 0.2s ease;
   
   &:active {
     transform: scale(0.98);
@@ -166,16 +162,40 @@ function handleDelete() {
   }
   
   &.has-alert {
-    border-left: 6rpx solid var(--warning-color);
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, var(--bg-card) 100%);
+    border-left: 4rpx solid var(--warning-color);
   }
 }
 
-.alert-badge {
-  position: absolute;
-  top: 16rpx;
-  right: 16rpx;
-  font-size: 32rpx;
+// 主要内容区：横向布局
+.card-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+// 股票信息
+.stock-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.stock-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.stock-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-icon {
+  font-size: 24rpx;
   animation: shake 0.5s ease-in-out infinite;
 }
 
@@ -185,53 +205,27 @@ function handleDelete() {
   75% { transform: rotate(10deg); }
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24rpx;
-}
-
-.stock-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.stock-name {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
 .stock-code {
-  font-size: 24rpx;
+  font-size: 20rpx;
   color: var(--text-secondary);
+  margin-top: 2rpx;
 }
 
-.stock-switch {
-  transform: scale(0.85);
-}
-
+// 价格区域
 .price-section {
   display: flex;
-  align-items: baseline;
-  margin-bottom: 24rpx;
+  flex-direction: column;
+  align-items: flex-end;
+  margin: 0 16rpx;
 }
 
 .current-price {
-  font-size: 72rpx;
+  font-size: 32rpx;
   font-weight: 700;
-  margin-right: 24rpx;
-}
-
-.change-info {
-  display: flex;
-  flex-direction: column;
 }
 
 .change-percent {
-  font-size: 28rpx;
+  font-size: 22rpx;
   font-weight: 500;
 }
 
@@ -243,58 +237,77 @@ function handleDelete() {
   color: var(--down-color);
 }
 
-// 预警信息
-.alerts-section {
-  margin-bottom: 24rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.alert-item {
+// 操作区
+.actions-section {
   display: flex;
   align-items: center;
-  padding: 8rpx 16rpx;
-  border-radius: 12rpx;
+  gap: 12rpx;
+}
+
+.stock-switch {
+  transform: scale(0.7);
+}
+
+.delete-btn {
+  width: 44rpx;
+  height: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.1);
+  
+  text {
+    font-size: 24rpx;
+    color: var(--danger-color);
+  }
+  
+  &:active {
+    background: rgba(239, 68, 68, 0.2);
+  }
+}
+
+// 预警信息行
+.alert-row {
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx solid var(--border-light);
+}
+
+.alert-text {
   font-size: 22rpx;
-}
-
-.alert-icon {
-  margin-right: 8rpx;
-}
-
-.alert-message {
-  flex: 1;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .alert-danger {
-  background: rgba(239, 68, 68, 0.1);
   color: var(--danger-color);
 }
 
 .alert-warning {
-  background: rgba(245, 158, 11, 0.1);
   color: var(--warning-color);
 }
 
 .alert-info {
-  background: rgba(59, 130, 246, 0.1);
   color: var(--info-color);
 }
 
+// 监测条件标签
 .conditions {
   display: flex;
   flex-wrap: wrap;
   gap: 8rpx;
-  margin-bottom: 24rpx;
+  margin-top: 12rpx;
 }
 
 .condition-tag {
   display: inline-flex;
   align-items: center;
-  padding: 8rpx 16rpx;
-  border-radius: 12rpx;
-  font-size: 22rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 20rpx;
   font-weight: 500;
 }
 
@@ -316,33 +329,5 @@ function handleDelete() {
 .tag-info {
   background: rgba(59, 130, 246, 0.1);
   color: var(--info-color);
-}
-
-.card-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 24rpx;
-  border-top: 1rpx solid var(--border-color);
-}
-
-.action-btn {
-  padding: 8rpx 24rpx;
-  border-radius: 12rpx;
-  font-size: 24rpx;
-  
-  &:active {
-    opacity: 0.7;
-  }
-}
-
-.delete-btn {
-  color: var(--danger-color);
-}
-
-// 暗黑模式适配
-@media (prefers-color-scheme: dark) {
-  .stock-card.has-alert {
-    background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, var(--bg-card) 100%);
-  }
 }
 </style>

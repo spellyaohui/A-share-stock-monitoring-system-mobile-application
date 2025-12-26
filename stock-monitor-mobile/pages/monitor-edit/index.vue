@@ -1,5 +1,11 @@
 <template>
   <view class="edit-page">
+    <!-- 加载状态 -->
+    <view class="loading-overlay" v-if="loading">
+      <view class="loading-spinner"></view>
+      <text class="loading-text">加载中...</text>
+    </view>
+    
     <!-- 股票信息头部 -->
     <view class="stock-header">
       <view class="stock-icon">📊</view>
@@ -118,7 +124,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { stockApi, monitorApi } from '../../api'
 import type { StockInfo } from '../../types'
 
@@ -128,6 +135,7 @@ const stockInfo = ref<StockInfo>({} as StockInfo)
 const monitorId = ref<number | null>(null)
 const currentPrice = ref<number | null>(null)
 const priceChange = ref<number | null>(null)
+const loading = ref(true)
 
 const form = reactive({
   stock_id: 0,
@@ -137,55 +145,96 @@ const form = reactive({
   fall_threshold: ''
 })
 
-onMounted(() => {
-  // 获取页面参数
-  const pages = getCurrentPages()
-  const currentPage = pages[pages.length - 1] as any
-  const options = currentPage.options || {}
+onLoad((options) => {
+  console.log('monitor-edit 页面参数:', options)
   
-  if (options.stockId) {
+  if (options?.stockId) {
     stockId.value = parseInt(options.stockId)
     form.stock_id = stockId.value
     loadData()
+  } else {
+    loading.value = false
+    uni.showToast({ title: '参数错误', icon: 'none' })
   }
 })
 
 async function loadData() {
-  await Promise.all([
-    loadStockInfo(),
-    loadMonitorInfo()
-  ])
+  loading.value = true
+  try {
+    // 先加载监测信息（包含股票信息和实时价格）
+    await loadMonitorInfo()
+    
+    // 如果监测信息中没有股票信息，再单独获取
+    if (!stockInfo.value.name) {
+      await loadStockInfo()
+    }
+  } finally {
+    loading.value = false
+  }
 }
 
 async function loadStockInfo() {
   try {
+    // 尝试从 getDetail 获取
     const res = await stockApi.getDetail(stockId.value)
-    stockInfo.value = res
+    if (res && res.name) {
+      stockInfo.value = res
+    }
     
     // 获取实时价格
-    try {
-      const realtime = await stockApi.getRealtime(stockId.value)
-      currentPrice.value = realtime.price
-      priceChange.value = realtime.change_percent
-    } catch (e) {
-      console.error('获取实时价格失败:', e)
+    if (!currentPrice.value) {
+      try {
+        const realtime = await stockApi.getRealtime(stockId.value)
+        if (realtime && realtime.price) {
+          currentPrice.value = realtime.price
+          priceChange.value = realtime.change_percent
+        }
+      } catch (e) {
+        console.error('获取实时价格失败:', e)
+      }
     }
   } catch (error) {
     console.error('加载股票信息失败:', error)
-    uni.showToast({ title: '加载股票信息失败', icon: 'none' })
+    // 不显示错误提示，因为可能已经从监测列表获取了信息
   }
 }
 
 async function loadMonitorInfo() {
   try {
     const res = await monitorApi.getList()
+    console.log('监测列表:', res)
     const monitor = res.find((m: any) => m.stock_id === stockId.value)
+    console.log('找到的监测:', monitor)
+    
     if (monitor) {
+      // 设置监测ID
       monitorId.value = monitor.id
+      
+      // 从监测数据中获取股票信息
+      if (monitor.stock) {
+        stockInfo.value = {
+          id: monitor.stock.id,
+          code: monitor.stock.code,
+          name: monitor.stock.name,
+          market: monitor.stock.market || '',
+          full_code: monitor.stock.full_code || ''
+        } as StockInfo
+      }
+      
+      // 从监测数据中获取实时价格
+      if (monitor.current_price || monitor.price) {
+        currentPrice.value = monitor.current_price || monitor.price
+        priceChange.value = monitor.change_percent
+      }
+      
+      // 设置表单数据
       form.price_min = monitor.price_min?.toString() || ''
       form.price_max = monitor.price_max?.toString() || ''
       form.rise_threshold = monitor.rise_threshold?.toString() || ''
       form.fall_threshold = monitor.fall_threshold?.toString() || ''
+      console.log('表单数据:', form)
+    } else {
+      console.log('未找到该股票的监测配置，这是新增监测')
     }
   } catch (error) {
     console.error('加载监测信息失败:', error)
@@ -304,6 +353,40 @@ function formatChange(value?: number | null): string {
   min-height: 100vh;
   background: var(--bg-primary);
   padding-bottom: 200rpx;
+}
+
+// 加载状态
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.loading-spinner {
+  width: 60rpx;
+  height: 60rpx;
+  border: 4rpx solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 24rpx;
+  font-size: 28rpx;
+  color: var(--text-secondary);
 }
 
 // 股票头部

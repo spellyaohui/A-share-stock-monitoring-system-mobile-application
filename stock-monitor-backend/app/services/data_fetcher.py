@@ -19,7 +19,8 @@ class DataFetcher:
         self.primary_source = stock_api_service  # 主数据源：东方财富
         self.backup_source = akshare_service     # 备用数据源：AkShare
         self.cache = {}
-        self.cache_ttl = 30  # 缓存30秒
+        self.cache_ttl = 60  # 通用缓存60秒
+        self.monitor_cache_ttl = 10  # 监测行情缓存10秒（更实时）
     
     def _is_cache_valid(self, key: str) -> bool:
         """检查缓存是否有效"""
@@ -83,6 +84,57 @@ class DataFetcher:
             
         except Exception as e:
             logger.error(f"获取实时行情异常: {stock_code}, 错误: {str(e)}")
+            return None
+    
+    async def get_realtime_quote_for_monitor(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """
+        获取监测个股的实时行情 - 优化版本
+        
+        数据获取优先级（按速度排序）：
+        1. 本地缓存（10秒TTL）
+        2. 东方财富 API（异步 HTTP，最快）
+        3. 新浪 API（东方财富内置备用）
+        4. AkShare 个股接口（同步阻塞，较慢，最后备用）
+        
+        Args:
+            stock_code: 股票代码
+            
+        Returns:
+            实时行情数据
+        """
+        # 检查本地缓存
+        cache_key = f"monitor_quote_{stock_code}"
+        if cache_key in self.cache:
+            cache_time, data = self.cache[cache_key]
+            if (datetime.now() - cache_time).total_seconds() < self.monitor_cache_ttl:
+                return data
+        
+        try:
+            # 优先使用东方财富 API（异步 HTTP，速度快）
+            quote = await self.primary_source.get_realtime_quote(stock_code)
+            if quote and quote.get("price", 0) > 0:
+                self._set_cache(cache_key, quote)
+                return quote
+            
+            # 东方财富失败，尝试 AkShare 个股接口
+            logger.info(f"东方财富API失败，尝试AkShare个股接口: {stock_code}")
+            quote = await self.backup_source.get_realtime_quote_individual(stock_code)
+            if quote and quote.get("price", 0) > 0:
+                self._set_cache(cache_key, quote)
+                return quote
+            
+            # 最后尝试 AkShare 全市场接口
+            logger.info(f"AkShare个股接口失败，尝试全市场接口: {stock_code}")
+            quote = await self.backup_source.get_realtime_quote(stock_code)
+            if quote:
+                self._set_cache(cache_key, quote)
+                return quote
+            
+            logger.warning(f"所有数据源都无法获取监测行情: {stock_code}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"获取监测行情异常: {stock_code}, 错误: {str(e)}")
             return None
     
     async def get_kline_data(

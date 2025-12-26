@@ -117,6 +117,45 @@ async def get_realtime_quote(stock_code: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+async def get_realtime_quote_for_monitor(stock_code: str) -> Optional[Dict[str, Any]]:
+    """
+    获取监测个股的实时行情 - 使用高效的个股专用接口
+    
+    此方法专为监测少量个股设计，使用雪球数据源的个股接口，
+    避免获取全市场数据后筛选，大幅提升效率并减少对数据源的压力。
+    
+    Args:
+        stock_code: 股票代码
+    
+    Returns:
+        实时行情数据（包含更多指标：量比、委比、52周高低等）
+    """
+    try:
+        # 优先使用 AkShare 的个股专用接口（雪球数据源）
+        quote = await akshare_service.get_realtime_quote_individual(stock_code)
+        if quote:
+            return quote
+        
+        # 如果个股接口失败，回退到东方财富API
+        logger.info(f"个股接口失败，回退到东方财富API: {stock_code}")
+        quote = await stock_api_service.get_realtime_quote(stock_code)
+        if quote:
+            return quote
+        
+        # 最后尝试 AkShare 全市场接口
+        logger.info(f"东方财富API失败，尝试AkShare全市场接口: {stock_code}")
+        quote = await akshare_service.get_realtime_quote(stock_code)
+        if quote:
+            return quote
+        
+        logger.warning(f"所有数据源都无法获取监测行情: {stock_code}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"获取监测行情异常: {stock_code}, 错误: {str(e)}")
+        return None
+
+
 async def get_kline_data(
     stock_code: str,
     period: str = "daily",
@@ -210,3 +249,64 @@ async def get_batch_quotes(stock_codes: List[str]) -> Dict[str, Dict[str, Any]]:
     except Exception as e:
         logger.error(f"批量获取行情异常: {str(e)}")
         return {}
+
+
+async def get_minute_kline(
+    stock_code: str,
+    period: str = "5",
+    limit: int = 100
+) -> List[Dict[str, Any]]:
+    """
+    获取分钟级K线数据
+    
+    Args:
+        stock_code: 股票代码
+        period: 分钟周期 (1/5/15/30/60)
+        limit: 数据条数
+    
+    Returns:
+        分钟K线数据列表
+    """
+    try:
+        # 使用AkShare获取分钟K线
+        klines = await akshare_service.get_minute_kline(stock_code, period, limit=limit)
+        return klines
+    except Exception as e:
+        logger.error(f"获取分钟K线异常: {stock_code}, 错误: {str(e)}")
+        return []
+
+
+async def get_bid_ask(stock_code: str) -> Optional[Dict[str, Any]]:
+    """
+    获取五档盘口数据
+    
+    Args:
+        stock_code: 股票代码
+    
+    Returns:
+        五档盘口数据
+    """
+    try:
+        bid_ask = await akshare_service.get_bid_ask(stock_code)
+        return bid_ask
+    except Exception as e:
+        logger.error(f"获取五档盘口异常: {stock_code}, 错误: {str(e)}")
+        return None
+
+
+async def get_hot_stocks(limit: int = 50) -> List[Dict[str, Any]]:
+    """
+    获取热门股票排名
+    
+    Args:
+        limit: 返回数量
+    
+    Returns:
+        热门股票列表
+    """
+    try:
+        hot_list = await akshare_service.get_hot_rank(limit)
+        return hot_list or []
+    except Exception as e:
+        logger.error(f"获取热门股票异常: {str(e)}")
+        return []

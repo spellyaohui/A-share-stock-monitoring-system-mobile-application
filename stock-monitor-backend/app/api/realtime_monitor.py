@@ -68,16 +68,28 @@ def is_monitor_cache_valid() -> bool:
 async def fetch_realtime_quotes(stock_codes: List[str]) -> Dict[str, Dict]:
     """
     获取指定股票的实时行情
-    只获取需要的股票，不获取全市场数据
+    使用 stock_bid_ask_em 个股接口，10秒缓存，避免频繁调用全市场接口
     """
     global _monitor_cache, _monitor_cache_time
     
     if not stock_codes:
         return {}
     
+    def safe_float(val, default=0):
+        """安全转换为浮点数，处理 '-' 和 NaN"""
+        if val is None or val == '-' or val == '':
+            return default
+        try:
+            result = float(val)
+            import math
+            if math.isnan(result) or math.isinf(result):
+                return default
+            return result
+        except (ValueError, TypeError):
+            return default
+    
     # 检查缓存
     if is_monitor_cache_valid():
-        # 从缓存中获取需要的股票
         result = {}
         missing_codes = []
         for code in stock_codes:
@@ -86,44 +98,57 @@ async def fetch_realtime_quotes(stock_codes: List[str]) -> Dict[str, Dict]:
             else:
                 missing_codes.append(code)
         
-        # 如果所有股票都在缓存中，直接返回
         if not missing_codes:
             return result
     else:
         missing_codes = stock_codes
         result = {}
     
-    # 获取缺失的股票数据
+    # 使用 stock_bid_ask_em 个股接口获取数据
     try:
         loop = asyncio.get_event_loop()
         
-        # 一次性获取全市场数据，然后筛选（比多次请求更高效）
-        df = await loop.run_in_executor(executor, ak.stock_zh_a_spot_em)
-        
-        if df is not None and not df.empty:
-            for code in missing_codes:
-                stock_row = df[df['代码'] == code]
-                if not stock_row.empty:
-                    row = stock_row.iloc[0]
+        for code in missing_codes:
+            try:
+                # 使用个股盘口接口
+                df = await loop.run_in_executor(executor, lambda c=code: ak.stock_bid_ask_em(symbol=c))
+                if df is not None and not df.empty:
+                    data = dict(zip(df["item"], df["value"]))
+                    
+                    price = safe_float(data.get("最新"))
+                    pre_close = safe_float(data.get("昨收"))
+                    
+                    # 非交易时间：如果最新价为0但昨收有值，使用昨收
+                    if price == 0 and pre_close > 0:
+                        price = pre_close
+                    
+                    # 计算涨跌额
+                    change = round(price - pre_close, 2) if pre_close > 0 else 0
+                    
                     quote = {
                         'code': code,
-                        'name': row['名称'],
-                        'price': float(row['最新价']) if row['最新价'] else 0,
-                        'change': float(row['涨跌额']) if row['涨跌额'] else 0,
-                        'change_percent': float(row['涨跌幅']) if row['涨跌幅'] else 0,
-                        'open': float(row['今开']) if row['今开'] else 0,
-                        'high': float(row['最高']) if row['最高'] else 0,
-                        'low': float(row['最低']) if row['最低'] else 0,
-                        'pre_close': float(row['昨收']) if row['昨收'] else 0,
-                        'volume': float(row['成交量']) if row['成交量'] else 0,
-                        'amount': float(row['成交额']) if row['成交额'] else 0,
+                        'name': str(data.get("名称", "")),
+                        'price': price,
+                        'change': change,
+                        'change_percent': safe_float(data.get("涨幅")),
+                        'open': safe_float(data.get("今开")),
+                        'high': safe_float(data.get("最高")),
+                        'low': safe_float(data.get("最低")),
+                        'pre_close': pre_close,
+                        'volume': int(safe_float(data.get("总手", 0)) * 100),
+                        'amount': safe_float(data.get("金额")),
+                        'volume_ratio': safe_float(data.get("量比")),
+                        'turnover_rate': safe_float(data.get("换手")),
+                        'limit_up': safe_float(data.get("涨停")),
+                        'limit_down': safe_float(data.get("跌停")),
                         'update_time': datetime.now().isoformat()
                     }
                     result[code] = quote
                     _monitor_cache[code] = quote
-            
-            _monitor_cache_time = datetime.now()
+            except Exception as e:
+                logger.warning(f"获取股票 {code} 行情失败: {e}")
         
+        _monitor_cache_time = datetime.now()
         return result
         
     except Exception as e:
@@ -143,35 +168,35 @@ def check_alerts(monitor: Monitor, quote: Dict) -> List[Dict]:
     if not price:
         return alerts
     
-    # 检查最高价预警
-    if monitor.price_upper and price >= monitor.price_upper:
+    # 检查最高价预警（price_max）
+    if monitor.price_max and price >= float(monitor.price_max):
         alerts.append({
-            'type': 'price_upper',
-            'message': f'股价 {price:.2f} 已达到或超过预警价 {monitor.price_upper:.2f}',
+            'type': 'price_max',
+            'message': f'股价 {price:.2f} 已达到或超过预警价 {float(monitor.price_max):.2f}',
             'level': 'warning'
         })
     
-    # 检查最低价预警
-    if monitor.price_lower and price <= monitor.price_lower:
+    # 检查最低价预警（price_min）
+    if monitor.price_min and price <= float(monitor.price_min):
         alerts.append({
-            'type': 'price_lower',
-            'message': f'股价 {price:.2f} 已达到或低于预警价 {monitor.price_lower:.2f}',
+            'type': 'price_min',
+            'message': f'股价 {price:.2f} 已达到或低于预警价 {float(monitor.price_min):.2f}',
             'level': 'warning'
         })
     
-    # 检查涨幅预警
-    if monitor.change_upper and change_percent >= monitor.change_upper:
+    # 检查涨幅预警（rise_threshold）
+    if monitor.rise_threshold and change_percent >= float(monitor.rise_threshold):
         alerts.append({
-            'type': 'change_upper',
-            'message': f'涨幅 {change_percent:.2f}% 已达到或超过预警值 {monitor.change_upper:.2f}%',
+            'type': 'rise',
+            'message': f'涨幅 {change_percent:.2f}% 已达到或超过预警值 {float(monitor.rise_threshold):.2f}%',
             'level': 'info'
         })
     
-    # 检查跌幅预警
-    if monitor.change_lower and change_percent <= monitor.change_lower:
+    # 检查跌幅预警（fall_threshold）
+    if monitor.fall_threshold and change_percent <= -float(monitor.fall_threshold):
         alerts.append({
-            'type': 'change_lower',
-            'message': f'跌幅 {change_percent:.2f}% 已达到或超过预警值 {monitor.change_lower:.2f}%',
+            'type': 'fall',
+            'message': f'跌幅 {abs(change_percent):.2f}% 已达到或超过预警值 {float(monitor.fall_threshold):.2f}%',
             'level': 'danger'
         })
     
@@ -224,13 +249,19 @@ async def get_realtime_monitors(
                 "stock_code": stock.code,
                 "stock_name": stock.name,
                 "is_active": monitor.is_active,
-                # 监测条件
-                "price_upper": monitor.price_upper,
-                "price_lower": monitor.price_lower,
-                "change_upper": monitor.change_upper,
-                "change_lower": monitor.change_lower,
+                # 监测条件（兼容新旧字段名）
+                "price_min": float(monitor.price_min) if monitor.price_min else None,
+                "price_max": float(monitor.price_max) if monitor.price_max else None,
+                "rise_threshold": float(monitor.rise_threshold) if monitor.rise_threshold else None,
+                "fall_threshold": float(monitor.fall_threshold) if monitor.fall_threshold else None,
+                # 新版字段名（兼容移动端）
+                "price_lower": float(monitor.price_min) if monitor.price_min else None,
+                "price_upper": float(monitor.price_max) if monitor.price_max else None,
+                "change_upper": float(monitor.rise_threshold) if monitor.rise_threshold else None,
+                "change_lower": float(monitor.fall_threshold) if monitor.fall_threshold else None,
                 # 实时数据
                 "price": quote.get('price', 0),
+                "current_price": quote.get('price', 0),
                 "change": quote.get('change', 0),
                 "change_percent": quote.get('change_percent', 0),
                 "open": quote.get('open', 0),

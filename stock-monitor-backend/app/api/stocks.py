@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from app.services.stock_service import search_stocks, get_stock_detail
 from app.services.data_fetcher import data_fetcher
+from app.services.akshare_api import akshare_service
 from app.database import get_db
 from app.core.logging import get_logger
 from app.utils.indicators import calculate_ma, calculate_rsi, calculate_macd
@@ -89,14 +90,29 @@ async def get_stock_realtime(
         # 获取实时行情
         quote = await data_fetcher.get_realtime_quote(stock_code)
         if not quote:
-            raise HTTPException(status_code=404, detail="无法获取实时行情")
+            # 返回基本信息，标记数据不可用
+            return {
+                "code": stock_code,
+                "name": stock.name if stock else "",
+                "price": 0,
+                "change": 0,
+                "change_percent": 0,
+                "open": 0,
+                "high": 0,
+                "low": 0,
+                "pre_close": 0,
+                "volume": 0,
+                "amount": 0,
+                "data_unavailable": True,
+                "message": "该股票暂无实时行情数据（可能是北交所、退市股或停牌股票）"
+            }
         
         return quote
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"获取实时行情失败: {stock_id}, 错误: {str(e)}")
-        raise HTTPException(status_code=500, detail="获取实时行情失败")
+        raise HTTPException(status_code=500, detail=f"获取实时行情失败: {str(e)}")
 
 
 @router.get("/{stock_id}/daily")
@@ -197,3 +213,98 @@ async def get_stock_indicators(
     except Exception as e:
         logger.error(f"获取技术指标失败: {stock_id}, 错误: {str(e)}")
         raise HTTPException(status_code=500, detail="获取技术指标失败")
+
+
+# ==================== 新增接口 ====================
+
+@router.get("/{stock_id}/bid-ask")
+async def get_stock_bid_ask(
+    stock_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取股票五档盘口数据"""
+    try:
+        # 获取股票代码
+        stock = await get_stock_detail(db, stock_id)
+        stock_code = stock.code if stock else str(stock_id).zfill(6)
+        
+        # 获取五档盘口
+        bid_ask = await akshare_service.get_bid_ask(stock_code)
+        if not bid_ask:
+            raise HTTPException(status_code=404, detail="无法获取盘口数据")
+        
+        return bid_ask
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取五档盘口失败: {stock_id}, 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取盘口数据失败")
+
+
+@router.get("/{stock_id}/kline-minute")
+async def get_stock_minute_kline(
+    stock_id: int,
+    period: str = Query("5", description="分钟周期: 1/5/15/30/60"),
+    limit: int = Query(100, le=500, description="数据条数"),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取分钟级K线数据"""
+    try:
+        # 验证周期参数
+        valid_periods = ["1", "5", "15", "30", "60"]
+        if period not in valid_periods:
+            raise HTTPException(status_code=400, detail=f"无效的周期参数，支持: {valid_periods}")
+        
+        # 获取股票代码
+        stock = await get_stock_detail(db, stock_id)
+        stock_code = stock.code if stock else str(stock_id).zfill(6)
+        
+        # 获取分钟K线
+        klines = await akshare_service.get_minute_kline(stock_code, period, limit=limit)
+        
+        return {
+            "klines": klines,
+            "period": f"{period}min",
+            "total": len(klines)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取分钟K线失败: {stock_id}, 错误: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取分钟K线失败")
+
+
+@router.get("/market/hot-rank")
+async def get_hot_rank(
+    limit: int = Query(50, le=100, description="返回数量")
+):
+    """获取热门股票排名"""
+    try:
+        hot_list = await akshare_service.get_hot_rank(limit)
+        if not hot_list:
+            return {"list": [], "total": 0}
+        
+        return {
+            "list": hot_list,
+            "total": len(hot_list)
+        }
+    except Exception as e:
+        logger.error(f"获取热门股票排名失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取热门排名失败")
+
+
+@router.get("/market/hot-keywords")
+async def get_hot_keywords():
+    """获取热门关键词/概念"""
+    try:
+        keywords = await akshare_service.get_hot_keywords()
+        if not keywords:
+            return {"list": [], "total": 0}
+        
+        return {
+            "list": keywords,
+            "total": len(keywords)
+        }
+    except Exception as e:
+        logger.error(f"获取热门关键词失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取热门关键词失败")

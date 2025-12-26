@@ -58,7 +58,7 @@ PC端：专业的股票监测管理界面
 - **数据库**：MySQL 8.0+ (异步驱动 aiomysql)
 - **ORM**：SQLAlchemy 2.0 (异步模式)
 - **认证**：JWT (python-jose + passlib)
-- **数据源**：AkShare (A股免费数据)
+- **数据源**：多源支持（东方财富 API 主源 + AkShare 备用）
 - **定时任务**：APScheduler
 
 ### PC 前端 (stock-monitor-pc)

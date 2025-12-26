@@ -550,11 +550,14 @@ async function addMonitor() {
 
 .popup-container {
   width: 100%;
+  max-width: 100vw;
   background: var(--bg-card);
   border-radius: 32rpx 32rpx 0 0;
   padding: 32rpx;
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
   animation: slideUp 0.3s ease;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 @keyframes slideUp {
@@ -643,10 +646,12 @@ async function addMonitor() {
 .form-row {
   display: flex;
   gap: 24rpx;
+  width: 100%;
 }
 
 .form-item {
   flex: 1;
+  min-width: 0;
 }
 
 .form-label {
@@ -663,10 +668,13 @@ async function addMonitor() {
   border-radius: 16rpx;
   padding: 0 24rpx;
   height: 88rpx;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .form-input {
   flex: 1;
+  min-width: 0;
   font-size: 28rpx;
   color: var(--text-primary);
   
@@ -679,6 +687,7 @@ async function addMonitor() {
   font-size: 24rpx;
   color: var(--text-secondary);
   margin-left: 8rpx;
+  flex-shrink: 0;
 }
 
 .form-tips {

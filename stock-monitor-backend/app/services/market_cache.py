@@ -86,37 +86,58 @@ class MarketCacheService:
             start_time = datetime.now()
             
             # 获取全市场实时数据
-            self._market_data = await self._run_in_executor(ak.stock_zh_a_spot_em)
+            raw_data = await self._run_in_executor(ak.stock_zh_a_spot_em)
             self._market_data_time = datetime.now()
             
             # 更新内存缓存
-            if self._market_data is not None and not self._market_data.empty:
+            if raw_data is not None and not raw_data.empty:
                 self._realtime_cache = {}
-                for _, row in self._market_data.iterrows():
+                
+                # 数据清洗：将 '-' 和 NaN 替换为 0
+                df = raw_data.copy()
+                numeric_columns = ['最新价', '涨跌额', '涨跌幅', '今开', '最高', '最低', '昨收', 
+                                   '成交量', '成交额', '振幅', '换手率', '市盈率-动态', '市净率',
+                                   '总市值', '流通市值', '量比', '涨速', '5分钟涨跌', '60日涨跌幅', '年初至今涨跌幅']
+                
+                for col in numeric_columns:
+                    if col in df.columns:
+                        # 将 '-' 替换为 NaN，然后填充为 0
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                
+                # 非交易时间处理：如果最新价为0但昨收有值，使用昨收作为最新价
+                mask = (df['最新价'] == 0) & (df['昨收'] > 0)
+                df.loc[mask, '最新价'] = df.loc[mask, '昨收']
+                df.loc[mask, '涨跌幅'] = 0  # 非交易时间涨跌幅为0
+                df.loc[mask, '涨跌额'] = 0
+                
+                # 保存清洗后的数据
+                self._market_data = df
+                
+                for _, row in df.iterrows():
                     code = row['代码']
                     self._realtime_cache[code] = {
                         'code': code,
                         'name': row['名称'],
-                        'price': row['最新价'],
-                        'change': row['涨跌额'],
-                        'change_percent': row['涨跌幅'],
-                        'open': row['今开'],
-                        'high': row['最高'],
-                        'low': row['最低'],
-                        'pre_close': row['昨收'],
-                        'volume': row['成交量'],
-                        'amount': row['成交额'],
-                        'amplitude': row['振幅'],
-                        'turnover_rate': row['换手率'],
-                        'pe_ratio': row['市盈率-动态'],
-                        'pb_ratio': row['市净率'],
-                        'total_value': row['总市值'],
-                        'circulating_value': row['流通市值'],
-                        'volume_ratio': row['量比'],
-                        'rise_speed': row['涨速'],
-                        'change_5min': row['5分钟涨跌'],
-                        'change_60day': row['60日涨跌幅'],
-                        'change_ytd': row['年初至今涨跌幅'],
+                        'price': float(row.get('最新价', 0) or 0),
+                        'change': float(row.get('涨跌额', 0) or 0),
+                        'change_percent': float(row.get('涨跌幅', 0) or 0),
+                        'open': float(row.get('今开', 0) or 0),
+                        'high': float(row.get('最高', 0) or 0),
+                        'low': float(row.get('最低', 0) or 0),
+                        'pre_close': float(row.get('昨收', 0) or 0),
+                        'volume': int(row.get('成交量', 0) or 0),
+                        'amount': float(row.get('成交额', 0) or 0),
+                        'amplitude': float(row.get('振幅', 0) or 0),
+                        'turnover_rate': float(row.get('换手率', 0) or 0),
+                        'pe_ratio': float(row.get('市盈率-动态', 0) or 0),
+                        'pb_ratio': float(row.get('市净率', 0) or 0),
+                        'total_value': float(row.get('总市值', 0) or 0),
+                        'circulating_value': float(row.get('流通市值', 0) or 0),
+                        'volume_ratio': float(row.get('量比', 0) or 0),
+                        'rise_speed': float(row.get('涨速', 0) or 0),
+                        'change_5min': float(row.get('5分钟涨跌', 0) or 0),
+                        'change_60day': float(row.get('60日涨跌幅', 0) or 0),
+                        'change_ytd': float(row.get('年初至今涨跌幅', 0) or 0),
                     }
                 self._cache_time = datetime.now()
             
@@ -144,10 +165,24 @@ class MarketCacheService:
     
     def get_market_stats(self) -> Dict[str, Any]:
         """获取市场统计数据"""
+        import numpy as np
+        
         if self._market_data is None or self._market_data.empty:
             return {}
         
-        df = self._market_data
+        df = self._market_data.copy()
+        
+        # 数据清洗
+        df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce').fillna(0)
+        df['涨跌幅'] = df['涨跌幅'].replace([np.inf, -np.inf], 0)
+        df['最新价'] = pd.to_numeric(df['最新价'], errors='coerce').fillna(0)
+        
+        # 过滤掉没有有效价格的股票
+        df = df[df['最新价'] > 0]
+        
+        if df.empty:
+            return {}
+        
         total = len(df)
         up = len(df[df['涨跌幅'] > 0])
         down = len(df[df['涨跌幅'] < 0])
@@ -157,15 +192,16 @@ class MarketCacheService:
         limit_up = len(df[df['涨跌幅'] >= 9.5])
         limit_down = len(df[df['涨跌幅'] <= -9.5])
         
+        # 确保所有数值都是 Python 原生类型
         return {
-            'total_stocks': total,
-            'up_stocks': up,
-            'down_stocks': down,
-            'flat_stocks': flat,
-            'limit_up': limit_up,
-            'limit_down': limit_down,
-            'up_ratio': round(up / total * 100, 2) if total > 0 else 0,
-            'down_ratio': round(down / total * 100, 2) if total > 0 else 0,
+            'total_stocks': int(total),
+            'up_stocks': int(up),
+            'down_stocks': int(down),
+            'flat_stocks': int(flat),
+            'limit_up': int(limit_up),
+            'limit_down': int(limit_down),
+            'up_ratio': float(round(up / total * 100, 2)) if total > 0 else 0.0,
+            'down_ratio': float(round(down / total * 100, 2)) if total > 0 else 0.0,
             'cache_time': self._cache_time.isoformat() if self._cache_time else None
         }
     
@@ -174,10 +210,41 @@ class MarketCacheService:
         获取排行榜数据
         by: amount(成交额), change(涨幅), turnover(换手率)
         """
+        import math
+        import numpy as np
+        
+        def clean_value(val):
+            """清理单个值中的 NaN 和 Inf"""
+            if isinstance(val, (float, np.floating)):
+                if math.isnan(val) or math.isinf(val):
+                    return 0
+                return float(val)
+            elif isinstance(val, np.integer):
+                return int(val)
+            return val
+        
+        def clean_record(record):
+            """清理记录中的所有值"""
+            return {k: clean_value(v) for k, v in record.items()}
+        
         if self._market_data is None or self._market_data.empty:
             return []
         
-        df = self._market_data
+        df = self._market_data.copy()
+        
+        # 数据清洗
+        numeric_columns = ['成交额', '涨跌幅', '换手率', '成交量', '最新价', '总市值']
+        for col in numeric_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                # 替换 inf 值
+                df[col] = df[col].replace([np.inf, -np.inf], 0)
+        
+        # 过滤掉没有有效价格的股票（价格为0或NaN的）
+        df = df[df['最新价'] > 0]
+        
+        if df.empty:
+            return []
         
         column_map = {
             'amount': '成交额',
@@ -193,9 +260,20 @@ class MarketCacheService:
             sort_column = '涨跌幅'
             ascending = True
         
-        sorted_df = df.nlargest(limit, sort_column) if not ascending else df.nsmallest(limit, sort_column)
+        # 非交易时间特殊处理：如果成交额全为0，按市值排序
+        if not self.is_trading_time() and by == 'amount':
+            if df['成交额'].sum() == 0 and '总市值' in df.columns:
+                sort_column = '总市值'
+                logger.info("非交易时间，成交额为0，改用市值排序")
         
-        return sorted_df[['代码', '名称', '最新价', '涨跌幅', '成交额', '换手率']].to_dict('records')
+        try:
+            sorted_df = df.nlargest(limit, sort_column) if not ascending else df.nsmallest(limit, sort_column)
+            records = sorted_df[['代码', '名称', '最新价', '涨跌幅', '成交额', '换手率']].to_dict('records')
+            # 清理每条记录中的 NaN 值
+            return [clean_record(r) for r in records]
+        except Exception as e:
+            logger.error(f"获取排行榜数据失败: {e}")
+            return []
     
     def is_cache_valid(self) -> bool:
         """检查缓存是否有效"""

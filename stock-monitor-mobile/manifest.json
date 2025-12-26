@@ -2,7 +2,7 @@
     "name" : "崔博股票监测",
     "appid" : "__UNI__73A0E19",
     "description" : "A股股票监测系统移动端应用",
-    "versionName" : "1.0.1",
+    "versionName" : "1.0.2",
     "versionCode" : "100",
     "transformPx" : false,
     "vueVersion" : "3",

@@ -28,8 +28,17 @@
         scroll-y 
         :refresher-enabled="true"
         :refresher-triggered="refreshing"
+        :refresher-threshold="80"
+        refresher-default-style="none"
         @refresherrefresh="onPullDownRefresh"
+        @refresherpulling="onPulling"
+        @refresherrestore="onRestore"
       >
+        <!-- 自定义刷新提示 -->
+        <view class="refresh-tip" v-if="pulling">
+          <text>{{ refreshing ? '刷新中...' : '下拉刷新' }}</text>
+        </view>
+        
         <view class="monitor-items">
           <StockCard
             v-for="item in monitors"
@@ -75,6 +84,7 @@ const monitorStore = useMonitorStore()
 // 状态
 const loading = ref(false)
 const refreshing = ref(false)
+const pulling = ref(false)
 
 // 计算属性
 const monitors = computed(() => monitorStore.monitors)
@@ -111,7 +121,18 @@ async function onPullDownRefresh() {
     uni.showToast({ title: '刷新失败', icon: 'none' })
   } finally {
     refreshing.value = false
+    pulling.value = false
   }
+}
+
+// 下拉中
+function onPulling() {
+  pulling.value = true
+}
+
+// 刷新恢复
+function onRestore() {
+  pulling.value = false
 }
 
 // 手动刷新
@@ -154,8 +175,12 @@ function handleDelete(id: number) {
 }
 
 // 跳转到详情
-function goToDetail(stockId: number) {
-  uni.navigateTo({ url: `/pages/stock-detail/index?id=${stockId}` })
+function goToDetail(data: { stockId: number, code?: string, name?: string }) {
+  if (data.code) {
+    uni.navigateTo({ 
+      url: `/pages/stock-detail/index?code=${data.code}&name=${encodeURIComponent(data.name || '')}` 
+    })
+  }
 }
 
 // 跳转到搜索
@@ -232,7 +257,15 @@ function goToSearch() {
 // 监测列表
 .monitor-list {
   flex: 1;
-  height: calc(100vh - 400rpx - $tabbar-height);
+  height: calc(100vh - 350rpx - $tabbar-height);
+}
+
+// 自定义刷新提示
+.refresh-tip {
+  text-align: center;
+  padding: 16rpx;
+  font-size: 24rpx;
+  color: var(--text-secondary);
 }
 
 .monitor-items {

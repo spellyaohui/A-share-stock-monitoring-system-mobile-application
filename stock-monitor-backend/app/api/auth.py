@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
-from app.schemas.user import Token, UserResponse
+from app.schemas.user import Token, UserResponse, UserCreate
 from app.services.auth_service import authenticate_user, create_user_token
 from app.database import get_db
 from app.models.user import User
@@ -32,13 +32,11 @@ async def login(
 
 @router.post("/register", response_model=UserResponse)
 async def register(
-    username: str,
-    password: str,
-    email: str = None,
+    user_data: UserCreate,
     db: AsyncSession = Depends(get_db)
 ):
     from sqlalchemy import select
-    result = await db.execute(select(User).where(User.username == username))
+    result = await db.execute(select(User).where(User.username == user_data.username))
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -46,9 +44,9 @@ async def register(
         )
 
     user = User(
-        username=username,
-        password_hash=get_password_hash(password),
-        email=email
+        username=user_data.username,
+        password_hash=get_password_hash(user_data.password),
+        email=user_data.email
     )
     db.add(user)
     await db.commit()

@@ -70,6 +70,13 @@
         >
           <text>资金流向</text>
         </view>
+        <view 
+          class="tab-item" 
+          :class="{ active: activeTab === 'news' }"
+          @click="activeTab = 'news'; loadNews()"
+        >
+          <text>新闻资讯</text>
+        </view>
       </view>
       
       <!-- 基本信息 -->
@@ -132,7 +139,13 @@
               <view class="loading-spinner"></view>
               <text class="loading-text">加载K线数据...</text>
             </view>
-            <view class="kline-summary" v-else>
+            <!-- K线图表 -->
+            <view class="chart-container" v-else-if="klineData.length > 0">
+              <KlineChart :data="klineData" :height="200" />
+            </view>
+            <!-- 数据摘要 -->
+            <view class="kline-summary" v-if="!chartLoading && klineSummary.length > 0">
+              <text class="summary-title">最近行情</text>
               <view class="kline-item" v-for="(item, index) in klineSummary" :key="index">
                 <text class="kline-date">{{ item.date }}</text>
                 <text class="kline-price" :class="item.change >= 0 ? 'text-up' : 'text-down'">
@@ -163,11 +176,11 @@
             <view class="info-grid">
               <view class="info-item">
                 <text class="info-label">市盈率(动态)</text>
-                <text class="info-value">{{ financial.basic_info?.市盈率?.toFixed(2) || '--' }}</text>
+                <text class="info-value">{{ formatRatio(financial.financial_ratios?.市盈率_动态) }}</text>
               </view>
               <view class="info-item">
                 <text class="info-label">市净率</text>
-                <text class="info-value">{{ financial.basic_info?.市净率?.toFixed(2) || '--' }}</text>
+                <text class="info-value">{{ formatRatio(financial.financial_ratios?.市净率) }}</text>
               </view>
               <view class="info-item">
                 <text class="info-label">总市值</text>
@@ -242,13 +255,45 @@
           </view>
         </view>
       </scroll-view>
+      
+      <!-- 新闻资讯 -->
+      <scroll-view 
+        v-show="activeTab === 'news'" 
+        class="tab-content"
+        scroll-y
+      >
+        <LoadingSkeleton v-if="newsLoading" type="list" :count="5" />
+        <view v-else class="news-content">
+          <view class="news-list" v-if="newsList.length > 0">
+            <view 
+              class="news-item" 
+              v-for="(item, index) in newsList" 
+              :key="index"
+              @click="openNewsLink(item)"
+            >
+              <view class="news-main">
+                <text class="news-title">{{ item.新闻标题 }}</text>
+                <view class="news-meta">
+                  <text class="news-source">{{ item.文章来源 }}</text>
+                  <text class="news-time">{{ formatNewsTime(item.发布时间) }}</text>
+                </view>
+              </view>
+              <view class="news-arrow">›</view>
+            </view>
+          </view>
+          <view class="empty-state" v-else>
+            <text class="empty-icon">📰</text>
+            <text class="empty-text">暂无相关新闻</text>
+          </view>
+        </view>
+      </scroll-view>
     </view>
 
     <!-- 底部操作栏 -->
     <view class="bottom-bar">
       <view class="btn btn-detail" @click="goToMonitorEdit">
-        <text class="btn-icon">➕</text>
-        <text class="btn-text">添加监测</text>
+        <text class="btn-icon">{{ isMonitored ? '✏️' : '➕' }}</text>
+        <text class="btn-text">{{ isMonitored ? '编辑监测' : '添加监测' }}</text>
       </view>
     </view>
   </view>
@@ -256,8 +301,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import LoadingSkeleton from '../../components/LoadingSkeleton.vue'
-import { stockApi, enhancedApi } from '../../api'
+import KlineChart from '../../components/KlineChart.vue'
+import { stockApi, enhancedApi, monitorApi } from '../../api'
 import type { StockInfo, StockRealtime } from '../../types'
 
 // 页面参数
@@ -271,6 +318,9 @@ const realtime = ref<StockRealtime>({} as StockRealtime)
 const financial = ref<any>({})
 const fundFlow = ref<any[]>([])
 const klineSummary = ref<any[]>([])
+const klineData = ref<any[]>([])  // K线图表数据
+const newsList = ref<any[]>([])   // 新闻列表
+const isMonitored = ref(false)    // 是否已监测
 
 // 状态
 const activeTab = ref('basic')
@@ -278,18 +328,17 @@ const period = ref('day')
 const chartLoading = ref(false)
 const financialLoading = ref(false)
 const fundFlowLoading = ref(false)
+const newsLoading = ref(false)
 
 // 定时器
 let refreshTimer: number | null = null
 
-onMounted(() => {
-  // 获取页面参数
-  const pages = getCurrentPages()
-  const currentPage = pages[pages.length - 1] as any
-  const options = currentPage.options || {}
+// 使用 onLoad 获取页面参数
+onLoad((options) => {
+  stockCode.value = options?.code || ''
+  stockName.value = decodeURIComponent(options?.name || '')
   
-  stockCode.value = options.code || ''
-  stockName.value = decodeURIComponent(options.name || '')
+  console.log('页面参数:', { code: stockCode.value, name: stockName.value })
   
   // 设置初始信息
   stockInfo.value = {
@@ -306,6 +355,13 @@ onMounted(() => {
   }, 30000) as unknown as number
 })
 
+// 页面显示时检查监测状态
+onShow(() => {
+  if (stockId.value) {
+    checkMonitorStatus()
+  }
+})
+
 onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer)
@@ -319,6 +375,12 @@ async function loadData() {
 }
 
 async function loadStockInfo() {
+  // 如果没有股票代码，跳过加载
+  if (!stockCode.value) {
+    console.warn('股票代码为空，跳过加载')
+    return
+  }
+  
   try {
     // 通过搜索获取股票ID
     const results = await stockApi.search(stockCode.value)
@@ -326,9 +388,21 @@ async function loadStockInfo() {
       const stock = results.find(s => s.code === stockCode.value) || results[0]
       stockInfo.value = stock
       stockId.value = stock.id
+      // 检查监测状态
+      await checkMonitorStatus()
     }
   } catch (error) {
     console.error('加载股票信息失败:', error)
+  }
+}
+
+// 检查是否已监测
+async function checkMonitorStatus() {
+  try {
+    const monitors = await monitorApi.getList()
+    isMonitored.value = monitors.some((m: any) => m.stock_id === stockId.value)
+  } catch (error) {
+    console.error('检查监测状态失败:', error)
   }
 }
 
@@ -346,8 +420,19 @@ async function loadKline() {
   if (!stockId.value) return
   chartLoading.value = true
   try {
-    const res = await stockApi.getKline(stockId.value, period.value, 10)
+    // 获取更多数据用于图表显示
+    const res = await stockApi.getKline(stockId.value, period.value, 60)
     if (res && res.klines) {
+      // 保存完整数据用于图表
+      klineData.value = res.klines.map((item: any) => ({
+        date: item.date,
+        open: item.open,
+        close: item.close,
+        high: item.high,
+        low: item.low,
+        volume: item.volume
+      }))
+      // 摘要数据（最近5条）
       klineSummary.value = res.klines.slice(-5).reverse().map((item: any) => ({
         date: item.date,
         close: item.close,
@@ -385,6 +470,57 @@ async function loadFundFlow() {
   } finally {
     fundFlowLoading.value = false
   }
+}
+
+// 加载新闻资讯
+async function loadNews() {
+  if (!stockCode.value || newsList.value.length > 0) return
+  newsLoading.value = true
+  try {
+    const res = await enhancedApi.getStockNews(stockCode.value, 20)
+    newsList.value = res.news || []
+  } catch (error) {
+    console.error('加载新闻失败:', error)
+  } finally {
+    newsLoading.value = false
+  }
+}
+
+// 打开新闻链接
+function openNewsLink(item: any) {
+  const url = item.新闻链接
+  if (!url) {
+    uni.showToast({ title: '链接不可用', icon: 'none' })
+    return
+  }
+  
+  // #ifdef H5
+  window.open(url, '_blank')
+  // #endif
+  
+  // #ifdef APP-PLUS
+  plus.runtime.openURL(url)
+  // #endif
+  
+  // #ifdef MP-WEIXIN
+  // 微信小程序需要使用 web-view 或复制链接
+  uni.setClipboardData({
+    data: url,
+    success: () => {
+      uni.showToast({ title: '链接已复制', icon: 'success' })
+    }
+  })
+  // #endif
+}
+
+// 格式化新闻时间
+function formatNewsTime(time: string): string {
+  if (!time) return ''
+  // 如果是完整日期时间，只显示日期部分
+  if (time.includes(' ')) {
+    return time.split(' ')[0]
+  }
+  return time
 }
 
 function changePeriod(p: string) {
@@ -445,6 +581,11 @@ function formatMoney(amount?: number): string {
   return amount.toFixed(2)
 }
 
+function formatRatio(value?: number): string {
+  if (value === undefined || value === null || value === 0) return '--'
+  return value.toFixed(2)
+}
+
 function formatPercent(value?: number): string {
   if (!value && value !== 0) return '--'
   return value.toFixed(2) + '%'
@@ -469,6 +610,8 @@ function getFlowClass(value?: number): string {
   min-height: 100vh;
   background: var(--bg-primary);
   padding-bottom: 160rpx;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 // 自定义导航栏
@@ -631,6 +774,8 @@ function getFlowClass(value?: number): string {
 .tab-content {
   height: calc(100vh - 500rpx);
   padding: 32rpx;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 // 信息卡片
@@ -640,6 +785,9 @@ function getFlowClass(value?: number): string {
   padding: 32rpx;
   margin-bottom: 32rpx;
   box-shadow: var(--shadow-sm);
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
 }
 
 .card-header {
@@ -737,11 +885,25 @@ function getFlowClass(value?: number): string {
   }
 }
 
+// K线图表容器
+.chart-container {
+  margin-bottom: 24rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
 // K线摘要
 .kline-summary {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
+}
+
+.summary-title {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  margin-bottom: 8rpx;
 }
 
 .kline-item {
@@ -809,6 +971,83 @@ function getFlowClass(value?: number): string {
 .fund-value {
   font-size: 28rpx;
   font-weight: 600;
+}
+
+// 新闻资讯
+.news-content {
+  padding: 0;
+}
+
+.news-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.news-item {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 32rpx;
+  background: var(--bg-card);
+  border-bottom: 1rpx solid var(--border-color);
+  
+  &:first-child {
+    border-radius: 24rpx 24rpx 0 0;
+  }
+  
+  &:last-child {
+    border-bottom: none;
+    border-radius: 0 0 24rpx 24rpx;
+  }
+  
+  &:only-child {
+    border-radius: 24rpx;
+  }
+  
+  &:active {
+    background: var(--bg-secondary);
+  }
+}
+
+.news-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.news-title {
+  font-size: 28rpx;
+  color: var(--text-primary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.news-meta {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 12rpx;
+}
+
+.news-source {
+  font-size: 22rpx;
+  color: var(--primary-color);
+  background: rgba(102, 126, 234, 0.1);
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+.news-time {
+  font-size: 22rpx;
+  color: var(--text-secondary);
+}
+
+.news-arrow {
+  font-size: 36rpx;
+  color: var(--text-secondary);
+  margin-left: 16rpx;
 }
 
 // 加载状态

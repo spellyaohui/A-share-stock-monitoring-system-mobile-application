@@ -13,6 +13,9 @@ from concurrent.futures import ThreadPoolExecutor
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/enhanced", tags=["增强功能"])
 
@@ -31,6 +34,26 @@ async def get_market_overview():
     获取市场概况
     优先使用缓存数据，避免频繁调用 AkShare API
     """
+    import math
+    import numpy as np
+    
+    def clean_nan(data):
+        """递归清理数据中的 NaN 和 Inf 值"""
+        if isinstance(data, list):
+            return [clean_nan(item) for item in data]
+        elif isinstance(data, dict):
+            return {k: clean_nan(v) for k, v in data.items()}
+        elif isinstance(data, float):
+            if math.isnan(data) or math.isinf(data):
+                return 0
+            return data
+        elif isinstance(data, (np.floating, np.integer)):
+            val = float(data)
+            if math.isnan(val) or math.isinf(val):
+                return 0
+            return val
+        return data
+    
     try:
         from app.services.market_cache import market_cache
         
@@ -42,33 +65,55 @@ async def get_market_overview():
             top_gainers = market_cache.get_top_stocks('change', 10)
             top_losers = market_cache.get_top_stocks('change_down', 10)
             
-            return {
+            return clean_nan({
                 "market_stats": market_stats,
                 "top_volume": top_volume,
                 "top_gainers": top_gainers,
                 "top_losers": top_losers,
                 "from_cache": True,
                 "timestamp": datetime.now().isoformat()
-            }
+            })
         
         # 缓存无效，刷新数据
-        await market_cache.refresh_market_data()
+        success = await market_cache.refresh_market_data()
+        
+        if not success:
+            # 刷新失败，返回空数据
+            return {
+                "market_stats": {},
+                "top_volume": [],
+                "top_gainers": [],
+                "top_losers": [],
+                "from_cache": False,
+                "error": "市场数据刷新失败",
+                "timestamp": datetime.now().isoformat()
+            }
         
         market_stats = market_cache.get_market_stats()
         top_volume = market_cache.get_top_stocks('amount', 10)
         top_gainers = market_cache.get_top_stocks('change', 10)
         top_losers = market_cache.get_top_stocks('change_down', 10)
         
-        return {
+        return clean_nan({
             "market_stats": market_stats,
             "top_volume": top_volume,
             "top_gainers": top_gainers,
             "top_losers": top_losers,
             "from_cache": False,
             "timestamp": datetime.now().isoformat()
-        }
+        })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取市场概况失败: {str(e)}")
+        logger.error(f"获取市场概况失败: {e}")
+        # 返回空数据而不是抛出异常
+        return {
+            "market_stats": {},
+            "top_volume": [],
+            "top_gainers": [],
+            "top_losers": [],
+            "from_cache": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 
 @router.get("/market/cache-status")
@@ -121,25 +166,32 @@ async def get_stock_financial(stock_code: str):
         except Exception as e:
             print(f"获取个股基本信息失败: {e}")
         
-        # 获取财务比率 - 使用缓存的实时数据或单独获取
+        # 获取财务比率 - 优先使用市场缓存
         financial_ratios = {}
         try:
-            # 尝试从缓存获取，避免每次都获取全市场数据
-            from app.services.data_fetcher import data_fetcher
-            quote = await data_fetcher.get_realtime_quote(stock_code)
+            # 1. 优先从市场缓存获取（最快，不会触发全市场请求）
+            from app.services.market_cache import market_cache
+            quote = market_cache.get_stock_realtime(stock_code)
+            
+            # 2. 如果缓存没有，使用 data_fetcher（会自动处理缓存）
+            if not quote:
+                from app.services.data_fetcher import data_fetcher
+                quote = await data_fetcher.get_realtime_quote(stock_code)
+            
             if quote:
                 financial_ratios = {
-                    "市盈率_动态": quote.get('pe_ratio', 0),
-                    "市净率": quote.get('pb_ratio', 0),
-                    "换手率": quote.get('turnover_rate', 0),
-                    "成交量": quote.get('volume', 0),
-                    "成交额": quote.get('amount', 0),
-                    "振幅": quote.get('amplitude', 0),
-                    "量比": quote.get('volume_ratio', 0),
+                    "市盈率_动态": quote.get('pe_ratio', 0) or 0,
+                    "市净率": quote.get('pb_ratio', 0) or 0,
+                    "换手率": quote.get('turnover_rate', 0) or 0,
+                    "成交量": quote.get('volume', 0) or 0,
+                    "成交额": quote.get('amount', 0) or 0,
+                    "振幅": quote.get('amplitude', 0) or 0,
+                    "量比": quote.get('volume_ratio', 0) or 0,
                     "涨速": 0,
                     "60日涨跌幅": 0,
                     "年初至今涨跌幅": 0
                 }
+                print(f"财务数据获取成功: 市盈率={financial_ratios['市盈率_动态']}, 市净率={financial_ratios['市净率']}")
         except Exception as e:
             print(f"获取财务比率失败: {e}")
         
@@ -269,50 +321,120 @@ async def get_market_sectors():
     """获取行业板块数据（带缓存）"""
     try:
         from app.services.market_cache import market_cache
+        import math
+        import numpy as np
+        
+        def clean_nan(data):
+            """递归清理数据中的 NaN 和 Inf 值"""
+            if isinstance(data, list):
+                return [clean_nan(item) for item in data]
+            elif isinstance(data, dict):
+                return {k: clean_nan(v) for k, v in data.items()}
+            elif isinstance(data, float):
+                if math.isnan(data) or math.isinf(data):
+                    return 0
+                return data
+            elif isinstance(data, (np.floating, np.integer)):
+                val = float(data)
+                if math.isnan(val) or math.isinf(val):
+                    return 0
+                return val
+            return data
+        
+        def clean_dataframe(df):
+            """清理 DataFrame 中的所有非法值"""
+            # 替换所有 NaN 和 Inf 为 0
+            df = df.replace([np.inf, -np.inf], 0)
+            df = df.fillna(0)
+            # 对于字符串列，将 '-' 替换为空字符串
+            for col in df.select_dtypes(include=['object']).columns:
+                df[col] = df[col].replace('-', '')
+            return df
         
         # 检查缓存
         cached_data = market_cache.get_sectors_cache()
         if cached_data:
             return {
-                **cached_data,
+                **clean_nan(cached_data),
                 "from_cache": True,
                 "timestamp": datetime.now().isoformat()
             }
         
         # 缓存无效，获取新数据
+        result = {"industries": [], "concepts": []}
+        
         # 获取行业板块
-        industry_data = await run_in_executor(ak.stock_board_industry_name_em)
+        try:
+            industry_data = await run_in_executor(ak.stock_board_industry_name_em)
+            if industry_data is not None and not industry_data.empty:
+                # 清理数据
+                industry_data = clean_dataframe(industry_data)
+                records = industry_data.to_dict('records')
+                result["industries"] = clean_nan(records)
+        except Exception as e:
+            logger.warning(f"获取行业板块失败: {e}")
         
         # 获取概念板块
-        concept_data = await run_in_executor(ak.stock_board_concept_name_em)
+        try:
+            concept_data = await run_in_executor(ak.stock_board_concept_name_em)
+            if concept_data is not None and not concept_data.empty:
+                # 清理数据
+                concept_data = clean_dataframe(concept_data)
+                records = concept_data.head(50).to_dict('records')  # 概念板块太多，限制50个
+                result["concepts"] = clean_nan(records)
+        except Exception as e:
+            logger.warning(f"获取概念板块失败: {e}")
         
-        result = {
-            "industries": industry_data.to_dict('records'),
-            "concepts": concept_data.head(50).to_dict('records'),  # 概念板块太多，限制50个
-        }
-        
-        # 存入缓存
-        market_cache.set_sectors_cache(result)
+        # 存入缓存（即使部分数据为空也缓存）
+        if result["industries"] or result["concepts"]:
+            market_cache.set_sectors_cache(result)
         
         return {
-            **result,
+            **clean_nan(result),
             "from_cache": False,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取板块数据失败: {str(e)}")
+        logger.error(f"获取板块数据失败: {e}")
+        # 返回空数据而不是抛出异常
+        return {
+            "industries": [],
+            "concepts": [],
+            "from_cache": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
 
 @router.get("/market/lhb")
 async def get_dragon_tiger_list():
     """获取龙虎榜数据（带缓存）"""
     try:
         from app.services.market_cache import market_cache
+        import math
+        import numpy as np
+        
+        def clean_nan(data):
+            """递归清理数据中的 NaN 和 Inf 值"""
+            if isinstance(data, list):
+                return [clean_nan(item) for item in data]
+            elif isinstance(data, dict):
+                return {k: clean_nan(v) for k, v in data.items()}
+            elif isinstance(data, float):
+                if math.isnan(data) or math.isinf(data):
+                    return 0
+                return data
+            elif isinstance(data, (np.floating, np.integer)):
+                val = float(data)
+                if math.isnan(val) or math.isinf(val):
+                    return 0
+                return val
+            return data
         
         # 检查缓存
         cached_data = market_cache.get_lhb_cache()
         if cached_data:
             return {
-                "lhb_data": cached_data,
+                "lhb_data": clean_nan(cached_data),
                 "from_cache": True,
                 "timestamp": datetime.now().isoformat()
             }
@@ -324,7 +446,10 @@ async def get_dragon_tiger_list():
         if lhb_data is None or lhb_data.empty:
             return {"lhb_data": [], "from_cache": False, "timestamp": datetime.now().isoformat()}
         
-        result = lhb_data.head(50).to_dict('records')
+        # 清理数据
+        lhb_data = lhb_data.replace([np.inf, -np.inf], 0)
+        lhb_data = lhb_data.fillna(0)
+        result = clean_nan(lhb_data.head(50).to_dict('records'))
         
         # 存入缓存
         market_cache.set_lhb_cache(result)

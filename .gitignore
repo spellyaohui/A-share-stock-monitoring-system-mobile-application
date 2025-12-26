@@ -71,6 +71,9 @@ stock-monitor-mobile/.hbuilderx/
 # Kiro
 .kiro/
 
+# Claude
+.claude/
+
 # 其他
 *.bak
 *.backup

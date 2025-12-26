@@ -36,6 +36,22 @@ export const api = {
     },
     getIndicators(id: number, indicator = 'ma') {
       return request.get<any, any>(`/stocks/${id}/indicators`, { params: { indicator } })
+    },
+    // 五档盘口数据
+    getBidAsk(id: number) {
+      return request.get<any, any>(`/stocks/${id}/bid-ask`)
+    },
+    // 分钟K线数据
+    getMinuteKline(id: number, period = '5', limit = 100) {
+      return request.get<any, any>(`/stocks/${id}/kline-minute`, { params: { period, limit } })
+    },
+    // 热门股票排名
+    getHotRank(limit = 50) {
+      return request.get<any, any>('/stocks/market/hot-rank', { params: { limit } })
+    },
+    // 热门关键词
+    getHotKeywords() {
+      return request.get<any, any>('/stocks/market/hot-keywords')
     }
   },
 
@@ -100,6 +116,18 @@ export const api = {
     },
     getHistory(limit = 50) {
       return request.get<any, any[]>('/notifications/history', { params: { limit } })
+    }
+  },
+
+  users: {
+    getList() {
+      return request.get<any, User[]>('/users/')
+    },
+    delete(id: number) {
+      return request.delete<any, void>(`/users/${id}`)
+    },
+    updatePassword(id: number, newPassword: string) {
+      return request.put<any, void>(`/users/${id}/password`, { new_password: newPassword })
     }
   }
 }
