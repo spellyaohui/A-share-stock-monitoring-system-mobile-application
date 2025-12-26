@@ -235,8 +235,8 @@
 #### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-username/stock-monitor-system.git
-cd stock-monitor-system
+git clone https://github.com/spellyaohui/A-share-stock-monitoring-system-mobile-application.git
+cd A-share-stock-monitoring-system-mobile-application
 ```
 
 #### 2. 数据库初始化
@@ -532,14 +532,14 @@ docker-compose up -d
 
 ## 📞 联系方式
 
-- 提交 Issue：[GitHub Issues](https://github.com/your-username/stock-monitor-system/issues)
-- 讨论交流：[GitHub Discussions](https://github.com/your-username/stock-monitor-system/discussions)
+- 提交 Issue：[GitHub Issues](https://github.com/spellyaohui/A-share-stock-monitoring-system-mobile-application/issues)
+- 讨论交流：[GitHub Discussions](https://github.com/spellyaohui/A-share-stock-monitoring-system-mobile-application/discussions)
 
 ## 🌟 Star History
 
 如果这个项目对你有帮助，请给一个 ⭐ Star 支持一下！
 
-[![Star History Chart](https://api.star-history.com/svg?repos=your-username/stock-monitor-system&type=Date)](https://star-history.com/#your-username/stock-monitor-system&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=spellyaohui/A-share-stock-monitoring-system-mobile-application&type=Date)](https://star-history.com/#spellyaohui/A-share-stock-monitoring-system-mobile-application&Date)
 
 ---
 
